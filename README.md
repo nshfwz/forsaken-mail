@@ -61,6 +61,19 @@ curl "http://127.0.0.1:3000/api/messages/{message_id}?email=demo@example.com"
 go build -o ./dist/forsaken-mail.exe ./cmd/server
 ```
 
+## 自动发布（GitHub Actions）
+
+- 推送版本标签会自动构建并发布二进制到 GitHub Release
+- 标签格式：`v*`（例如 `v1.0.0`、`v1.1.0-rc1`）
+- 发布产物包含 `linux/windows/darwin` 的 `amd64/arm64` 二进制与 `checksums.txt`
+
+示例：
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
 ## Docker
 
 ```bash
