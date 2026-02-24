@@ -36,6 +36,14 @@ curl "http://127.0.0.1:3000/api/messages/{message_id}?email=demo@example.com"
 - 默认每邮箱最多 `200` 封
 - 默认过期时间 `24h`（`MESSAGE_TTL_MINUTES=1440`）
 
+### 邮件保存时间说明
+
+- 默认保存时间：`24 小时`
+- 配置方式：设置环境变量 `MESSAGE_TTL_MINUTES`
+- 示例：`MESSAGE_TTL_MINUTES=60` 表示邮件保存 `60 分钟`
+- 清理方式：服务会周期清理过期邮件（约每分钟一次）
+- 注意：当前策略不是“查看即删除”，查看邮件不会立刻销毁
+
 ## 环境变量
 
 - `HTTP_ADDR`：HTTP 监听地址，默认 `:3000`
