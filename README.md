@@ -2,6 +2,8 @@
 
 独立 Go 项目版本，提供临时邮箱收件与网页/API 查询能力。
 
+当前版本：`v1.1.0`
+
 ## 功能
 
 - SMTP 收件服务（默认 `:25`）
@@ -74,14 +76,14 @@ go build -o ./dist/forsaken-mail.exe ./cmd/server
 ## 自动发布（GitHub Actions）
 
 - 推送版本标签会自动构建并发布二进制到 GitHub Release
-- 标签格式：`v*`（例如 `v1.0.0`、`v1.1.0-rc1`）
+- 标签格式：`v*`（例如 `v1.1.0`、`v1.2.0-rc1`）
 - 发布产物包含 `linux/windows/darwin` 的 `amd64/arm64` 二进制与 `checksums.txt`
 
 示例：
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.1.0
+git push origin v1.1.0
 ```
 
 ## Docker
