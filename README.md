@@ -7,7 +7,7 @@
 - SMTP 收件服务（默认 `:25`）
 - HTTP API（默认 `:3000`）
 - 前端页面（`/`）查看邮件列表与正文
-- 按邮箱查询邮件列表/详情 API
+- 按邮箱查询、删除单封、清空邮箱 API
 
 ## 快速启动
 
@@ -26,8 +26,17 @@ go run ./cmd/server
 ```bash
 curl "http://127.0.0.1:3000/api/mailboxes/demo/messages"
 curl "http://127.0.0.1:3000/api/mailboxes/demo/messages/{message_id}"
+curl -X DELETE "http://127.0.0.1:3000/api/mailboxes/demo/messages/{message_id}"
+curl -X DELETE "http://127.0.0.1:3000/api/mailboxes/demo/messages"
 curl "http://127.0.0.1:3000/api/messages?email=demo@example.com"
 curl "http://127.0.0.1:3000/api/messages/{message_id}?email=demo@example.com"
+```
+
+删除响应示例：
+
+```json
+{"mailbox":"demo","email":"demo@example.com","id":"abc123","deleted":true}
+{"mailbox":"demo","email":"demo@example.com","count":3}
 ```
 
 ## 邮件保留策略
