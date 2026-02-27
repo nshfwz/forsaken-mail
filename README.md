@@ -2,11 +2,13 @@
 
 独立 Go 项目版本，提供临时邮箱收件与网页/API 查询能力。
 
+当前版本：`v1.1.0`
+
 ## 功能
 
 - SMTP 收件服务（默认 `:25`）
 - HTTP API（默认 `:3000`）
-- 前端页面（`/`）查看邮件列表与正文
+- 前端页面（`/`）查看邮件列表与正文（SSE 实时推送，失败自动回退轮询）
 - 按邮箱查询、删除单封、清空邮箱 API
 
 ## 快速启动
@@ -26,6 +28,7 @@ go run ./cmd/server
 ```bash
 curl "http://127.0.0.1:3000/api/mailboxes/demo/messages"
 curl "http://127.0.0.1:3000/api/mailboxes/demo/messages/{message_id}"
+curl -N "http://127.0.0.1:3000/api/mailboxes/demo/events"
 curl -X DELETE "http://127.0.0.1:3000/api/mailboxes/demo/messages/{message_id}"
 curl -X DELETE "http://127.0.0.1:3000/api/mailboxes/demo/messages"
 curl "http://127.0.0.1:3000/api/messages?email=demo@example.com"
@@ -73,14 +76,14 @@ go build -o ./dist/forsaken-mail.exe ./cmd/server
 ## 自动发布（GitHub Actions）
 
 - 推送版本标签会自动构建并发布二进制到 GitHub Release
-- 标签格式：`v*`（例如 `v1.0.0`、`v1.1.0-rc1`）
+- 标签格式：`v*`（例如 `v1.1.0`、`v1.2.0-rc1`）
 - 发布产物包含 `linux/windows/darwin` 的 `amd64/arm64` 二进制与 `checksums.txt`
 
 示例：
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.1.0
+git push origin v1.1.0
 ```
 
 ## Docker
