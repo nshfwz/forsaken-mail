@@ -104,9 +104,15 @@ func (h *Handler) eventsByMailbox(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case <-keepAliveTicker.C:
-			_, _ = fmt.Fprint(w, ": keep-alive\n\n")
+			if _, writeErr := fmt.Fprint(w, ": keep-alive\n\n"); writeErr != nil {
+				return
+			}
 			flusher.Flush()
-		case event := <-events:
+		case event, ok := <-events:
+			if !ok {
+				return
+			}
+
 			payload, marshalErr := json.Marshal(map[string]any{
 				"id":          event.ID,
 				"subject":     event.Subject,
@@ -117,7 +123,9 @@ func (h *Handler) eventsByMailbox(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			_, _ = fmt.Fprintf(w, "event: message:new\ndata: %s\n\n", payload)
+			if _, writeErr := fmt.Fprintf(w, "event: message:new\ndata: %s\n\n", payload); writeErr != nil {
+				return
+			}
 			flusher.Flush()
 		}
 	}
