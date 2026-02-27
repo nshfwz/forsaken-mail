@@ -34,7 +34,7 @@ func main() {
 		Addr:         cfg.HTTPAddr,
 		Handler:      requestLogger(rootMux, logger),
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 60 * time.Second,
+		WriteTimeout: 0,
 		IdleTimeout:  60 * time.Second,
 	}
 

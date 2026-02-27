@@ -37,6 +37,9 @@
   };
 
   let pollTimer = null;
+  let eventSource = null;
+  let sseRetryTimer = null;
+  let sseFailureCount = 0;
 
   function boot() {
     syncTopbarOffset();
@@ -114,7 +117,7 @@
     renderDetail(null);
     renderAPIExamples();
     refreshMessages(false);
-    resetPolling();
+    startRealtimeUpdates();
     setStatus(`已切换到邮箱 ${state.email}`);
   }
 
@@ -166,10 +169,82 @@
   }
 
   function resetPolling() {
-    if (pollTimer) {
-      window.clearInterval(pollTimer);
-    }
+    stopPolling();
     pollTimer = window.setInterval(() => refreshMessages(true), POLL_INTERVAL_MS);
+  }
+
+  function startRealtimeUpdates() {
+    stopRealtimeUpdates();
+
+    if (!window.EventSource) {
+      resetPolling();
+      setStatus("当前浏览器不支持实时推送，已使用轮询模式。", true);
+      return;
+    }
+
+    const endpoint = `/api/mailboxes/${encodeURIComponent(state.mailbox)}/events`;
+    eventSource = new EventSource(endpoint);
+
+    eventSource.addEventListener("open", () => {
+      sseFailureCount = 0;
+      stopPolling();
+    });
+
+    eventSource.addEventListener("message:new", async (event) => {
+      const payload = parseSSEPayload(event.data);
+      await refreshMessages(true);
+
+      if (!payload || !payload.subject) {
+        return;
+      }
+      setStatus(`收到新邮件：${payload.subject}`);
+    });
+
+    eventSource.onerror = () => {
+      sseFailureCount += 1;
+      reconnectSSEWithBackoff();
+    };
+  }
+
+  function stopRealtimeUpdates() {
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
+    if (sseRetryTimer) {
+      window.clearTimeout(sseRetryTimer);
+      sseRetryTimer = null;
+    }
+  }
+
+  function reconnectSSEWithBackoff() {
+    if (!state.mailbox) {
+      return;
+    }
+
+    stopRealtimeUpdates();
+
+    if (sseFailureCount >= 3) {
+      resetPolling();
+      setStatus("实时连接不稳定，已切换为轮询模式。", true);
+      return;
+    }
+
+    const delay = Math.min(1000 * 2 ** (sseFailureCount - 1), 4000);
+    sseRetryTimer = window.setTimeout(() => {
+      if (!state.mailbox) {
+        return;
+      }
+      startRealtimeUpdates();
+    }, delay);
+  }
+
+  function stopPolling() {
+    if (!pollTimer) {
+      return;
+    }
+    window.clearInterval(pollTimer);
+    pollTimer = null;
   }
 
   async function refreshMessages(isAutoRefresh) {
@@ -365,6 +440,18 @@
     return payload;
   }
 
+  function parseSSEPayload(raw) {
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
   function formatDate(value) {
     if (!value) {
       return "-";
@@ -390,5 +477,6 @@
       .replaceAll("'", "&#39;");
   }
 
+  window.addEventListener("beforeunload", stopRealtimeUpdates);
   boot();
 })();

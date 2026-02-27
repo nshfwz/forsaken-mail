@@ -35,13 +35,25 @@ var htmlTagPattern = regexp.MustCompile(`(?s)<[^>]*>`)
 type Store struct {
 	mu          sync.RWMutex
 	byMailbox   map[string][]Message
+	subscribers map[string]map[int]chan MessageEvent
+	nextSubID   int
 	maxMessages int
 	ttl         time.Duration
+}
+
+type MessageEvent struct {
+	Type       string    `json:"type"`
+	MessageID  string    `json:"message_id"`
+	Mailbox    string    `json:"mailbox"`
+	From       string    `json:"from"`
+	Subject    string    `json:"subject"`
+	ReceivedAt time.Time `json:"received_at"`
 }
 
 func New(maxMessages int, ttl time.Duration) *Store {
 	return &Store{
 		byMailbox:   make(map[string][]Message),
+		subscribers: make(map[string]map[int]chan MessageEvent),
 		maxMessages: maxMessages,
 		ttl:         ttl,
 	}
@@ -67,6 +79,58 @@ func (s *Store) Add(mailbox string, msg Message) {
 
 	s.byMailbox[mailbox] = append(s.byMailbox[mailbox], msg)
 	s.pruneMailboxLocked(mailbox, now)
+
+	event := MessageEvent{
+		Type:       "message:new",
+		MessageID:  msg.ID,
+		Mailbox:    mailbox,
+		From:       msg.From,
+		Subject:    msg.Subject,
+		ReceivedAt: msg.ReceivedAt,
+	}
+	s.publishEventLocked(mailbox, event)
+}
+
+func (s *Store) Subscribe(mailbox string) (<-chan MessageEvent, func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	mailbox = strings.ToLower(strings.TrimSpace(mailbox))
+	if mailbox == "" {
+		closed := make(chan MessageEvent)
+		close(closed)
+		return closed, func() {}
+	}
+
+	ch := make(chan MessageEvent, 16)
+	if s.subscribers[mailbox] == nil {
+		s.subscribers[mailbox] = make(map[int]chan MessageEvent)
+	}
+
+	subID := s.nextSubID
+	s.nextSubID++
+	s.subscribers[mailbox][subID] = ch
+
+	return ch, func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		mailboxSubscribers, ok := s.subscribers[mailbox]
+		if !ok {
+			return
+		}
+
+		sub, exists := mailboxSubscribers[subID]
+		if !exists {
+			return
+		}
+
+		delete(mailboxSubscribers, subID)
+		close(sub)
+		if len(mailboxSubscribers) == 0 {
+			delete(s.subscribers, mailbox)
+		}
+	}
 }
 
 func (s *Store) List(mailbox string) []Message {
@@ -229,6 +293,20 @@ func cloneHeaders(headers map[string][]string) map[string][]string {
 		out[key] = append([]string(nil), values...)
 	}
 	return out
+}
+
+func (s *Store) publishEventLocked(mailbox string, event MessageEvent) {
+	mailboxSubscribers, ok := s.subscribers[mailbox]
+	if !ok {
+		return
+	}
+
+	for _, sub := range mailboxSubscribers {
+		select {
+		case sub <- event:
+		default:
+		}
+	}
 }
 
 func normalizeMailbox(mailbox string) string {
