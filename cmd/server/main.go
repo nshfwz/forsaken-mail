@@ -35,7 +35,7 @@ func main() {
 		Handler:           requestLogger(rootMux, logger),
 		ReadHeaderTimeout: 15 * time.Second,
 		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      0,
+		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 

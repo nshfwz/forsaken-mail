@@ -104,7 +104,6 @@ func (s *Store) Subscribe(mailbox string) (<-chan MessageSummary, func()) {
 		}
 
 		delete(subs, ch)
-		close(ch)
 		if len(subs) == 0 {
 			delete(s.subscribers, mailbox)
 		}
