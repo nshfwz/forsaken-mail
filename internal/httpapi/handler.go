@@ -2,8 +2,10 @@ package httpapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"tempmail.local/forsaken-mail-go/internal/address"
 	"tempmail.local/forsaken-mail-go/internal/config"
@@ -27,6 +29,7 @@ func New(cfg config.Config, store *storage.Store) http.Handler {
 	mux.HandleFunc("GET /api/messages/{id}", handler.getByEmail)
 	mux.HandleFunc("GET /api/mailboxes/{mailbox}/messages", handler.listByMailbox)
 	mux.HandleFunc("GET /api/mailboxes/{mailbox}/messages/{id}", handler.getByMailbox)
+	mux.HandleFunc("GET /api/mailboxes/{mailbox}/events", handler.eventsByMailbox)
 
 	return mux
 }
@@ -63,6 +66,61 @@ func (h *Handler) listByMailbox(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) getByMailbox(w http.ResponseWriter, r *http.Request) {
 	h.writeMessageDetail(w, r.PathValue("mailbox"), r.PathValue("id"))
+}
+
+func (h *Handler) eventsByMailbox(w http.ResponseWriter, r *http.Request) {
+	mailbox, _, err := address.NormalizeMailbox(r.PathValue("mailbox"), h.cfg.Domain)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "streaming unsupported")
+		return
+	}
+
+	if controller := http.NewResponseController(w); controller != nil {
+		_ = controller.SetWriteDeadline(time.Time{})
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+
+	_, _ = fmt.Fprint(w, ": connected\n\n")
+	flusher.Flush()
+
+	events, unsubscribe := h.store.Subscribe(mailbox)
+	defer unsubscribe()
+
+	keepAliveTicker := time.NewTicker(25 * time.Second)
+	defer keepAliveTicker.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-keepAliveTicker.C:
+			_, _ = fmt.Fprint(w, ": keep-alive\n\n")
+			flusher.Flush()
+		case event := <-events:
+			payload, marshalErr := json.Marshal(map[string]any{
+				"id":          event.ID,
+				"subject":     event.Subject,
+				"from":        event.From,
+				"received_at": event.ReceivedAt,
+			})
+			if marshalErr != nil {
+				continue
+			}
+
+			_, _ = fmt.Fprintf(w, "event: message:new\ndata: %s\n\n", payload)
+			flusher.Flush()
+		}
+	}
 }
 
 func (h *Handler) writeMessageList(w http.ResponseWriter, mailboxInput string) {

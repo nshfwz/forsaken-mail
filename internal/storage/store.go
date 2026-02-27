@@ -35,6 +35,7 @@ var htmlTagPattern = regexp.MustCompile(`(?s)<[^>]*>`)
 type Store struct {
 	mu          sync.RWMutex
 	byMailbox   map[string][]Message
+	subscribers map[string]map[chan MessageSummary]struct{}
 	maxMessages int
 	ttl         time.Duration
 }
@@ -42,6 +43,7 @@ type Store struct {
 func New(maxMessages int, ttl time.Duration) *Store {
 	return &Store{
 		byMailbox:   make(map[string][]Message),
+		subscribers: make(map[string]map[chan MessageSummary]struct{}),
 		maxMessages: maxMessages,
 		ttl:         ttl,
 	}
@@ -49,7 +51,6 @@ func New(maxMessages int, ttl time.Duration) *Store {
 
 func (s *Store) Add(mailbox string, msg Message) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	now := time.Now().UTC()
 	mailbox = strings.ToLower(strings.TrimSpace(mailbox))
@@ -67,6 +68,49 @@ func (s *Store) Add(mailbox string, msg Message) {
 
 	s.byMailbox[mailbox] = append(s.byMailbox[mailbox], msg)
 	s.pruneMailboxLocked(mailbox, now)
+	summary := msg.Summary()
+	subs := s.collectSubscribersLocked(mailbox)
+	s.mu.Unlock()
+
+	for _, sub := range subs {
+		select {
+		case sub <- summary:
+		default:
+		}
+	}
+}
+
+func (s *Store) Subscribe(mailbox string) (<-chan MessageSummary, func()) {
+	mailbox = strings.ToLower(strings.TrimSpace(mailbox))
+	ch := make(chan MessageSummary, 8)
+
+	s.mu.Lock()
+	if s.subscribers[mailbox] == nil {
+		s.subscribers[mailbox] = make(map[chan MessageSummary]struct{})
+	}
+	s.subscribers[mailbox][ch] = struct{}{}
+	s.mu.Unlock()
+
+	unsubscribe := func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		subs, ok := s.subscribers[mailbox]
+		if !ok {
+			return
+		}
+		if _, exists := subs[ch]; !exists {
+			return
+		}
+
+		delete(subs, ch)
+		close(ch)
+		if len(subs) == 0 {
+			delete(s.subscribers, mailbox)
+		}
+	}
+
+	return ch, unsubscribe
 }
 
 func (s *Store) List(mailbox string) []Message {
@@ -185,6 +229,19 @@ func cloneHeaders(headers map[string][]string) map[string][]string {
 	out := make(map[string][]string, len(headers))
 	for key, values := range headers {
 		out[key] = append([]string(nil), values...)
+	}
+	return out
+}
+
+func (s *Store) collectSubscribersLocked(mailbox string) []chan MessageSummary {
+	subs, ok := s.subscribers[mailbox]
+	if !ok || len(subs) == 0 {
+		return nil
+	}
+
+	out := make([]chan MessageSummary, 0, len(subs))
+	for ch := range subs {
+		out = append(out, ch)
 	}
 	return out
 }

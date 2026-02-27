@@ -31,11 +31,12 @@ func main() {
 	rootMux.Handle("/", newStaticHandler(logger))
 
 	httpSrv := &http.Server{
-		Addr:         cfg.HTTPAddr,
-		Handler:      requestLogger(rootMux, logger),
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:              cfg.HTTPAddr,
+		Handler:           requestLogger(rootMux, logger),
+		ReadHeaderTimeout: 15 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      0,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	errCh := make(chan error, 2)
@@ -101,6 +102,12 @@ type statusRecorder struct {
 func (r *statusRecorder) WriteHeader(statusCode int) {
 	r.status = statusCode
 	r.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (r *statusRecorder) Flush() {
+	if flusher, ok := r.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
 }
 
 func requestLogger(next http.Handler, logger *log.Logger) http.Handler {

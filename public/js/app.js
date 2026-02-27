@@ -35,6 +35,8 @@
   };
 
   let pollTimer = null;
+  let eventSource = null;
+  let isUsingSSE = false;
 
   function boot() {
     syncTopbarOffset();
@@ -104,7 +106,7 @@
     renderDetail(null);
     renderAPIExamples();
     refreshMessages(false);
-    resetPolling();
+    startMailboxUpdates();
     setStatus(`已切换到邮箱 ${state.email}`);
   }
 
@@ -155,10 +157,59 @@
     elements.detailAPIExample.textContent = `GET /api/mailboxes/${mailboxSegment}/messages/${selectedID}`;
   }
 
-  function resetPolling() {
+
+  function startMailboxUpdates() {
+    stopMailboxUpdates();
+
+    if (!window.EventSource) {
+      isUsingSSE = false;
+      resetPolling();
+      return;
+    }
+
+    const endpoint = `/api/mailboxes/${encodeURIComponent(state.mailbox)}/events`;
+    eventSource = new EventSource(endpoint);
+
+    eventSource.addEventListener("open", () => {
+      isUsingSSE = true;
+      stopPolling();
+    });
+
+    eventSource.addEventListener("message:new", () => {
+      refreshMessages(true);
+    });
+
+    eventSource.addEventListener("error", () => {
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+      if (isUsingSSE) {
+        setStatus("实时连接中断，已自动切换为轮询模式。", true);
+      }
+      isUsingSSE = false;
+      resetPolling();
+    });
+  }
+
+  function stopMailboxUpdates() {
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
+    stopPolling();
+    isUsingSSE = false;
+  }
+
+  function stopPolling() {
     if (pollTimer) {
       window.clearInterval(pollTimer);
+      pollTimer = null;
     }
+  }
+
+  function resetPolling() {
+    stopPolling();
     pollTimer = window.setInterval(() => refreshMessages(true), POLL_INTERVAL_MS);
   }
 
@@ -326,6 +377,10 @@
     }
     return date.toLocaleString("zh-CN", { hour12: false });
   }
+
+  window.addEventListener("beforeunload", () => {
+    stopMailboxUpdates();
+  });
 
   function setStatus(message, isError) {
     elements.statusBar.textContent = message;
