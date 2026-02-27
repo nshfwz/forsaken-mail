@@ -21,6 +21,8 @@
     randomMailboxButton: document.getElementById("randomMailbox"),
     copyAddressButton: document.getElementById("copyAddress"),
     refreshMessagesButton: document.getElementById("refreshMessages"),
+    deleteMessageButton: document.getElementById("deleteMessage"),
+    clearMailboxButton: document.getElementById("clearMailbox"),
     currentAddress: document.getElementById("currentAddress"),
     messageCount: document.getElementById("messageCount"),
     mailTableBody: document.getElementById("mailTableBody"),
@@ -31,7 +33,7 @@
     statusBar: document.getElementById("statusBar"),
     listAPIExample: document.getElementById("apiListExample"),
     detailAPIExample: document.getElementById("apiDetailExample"),
-    tabButtons: Array.from(document.querySelectorAll(".tab-btn")),
+    tabButtons: Array.from(document.querySelectorAll(".content-tabs .tab-btn")),
   };
 
   let pollTimer = null;
@@ -82,6 +84,14 @@
 
     elements.refreshMessagesButton.addEventListener("click", () => {
       refreshMessages(false);
+    });
+
+    elements.deleteMessageButton.addEventListener("click", async () => {
+      await deleteCurrentMessage();
+    });
+
+    elements.clearMailboxButton.addEventListener("click", async () => {
+      await clearCurrentMailbox();
     });
 
     elements.tabButtons.forEach((button) => {
@@ -252,6 +262,45 @@
     }
   }
 
+  async function deleteCurrentMessage() {
+    if (!state.mailbox) {
+      return;
+    }
+    if (!state.currentMessageID) {
+      setStatus("当前没有可删除的邮件。", true);
+      return;
+    }
+
+    const endpoint = `/api/mailboxes/${encodeURIComponent(state.mailbox)}/messages/${encodeURIComponent(state.currentMessageID)}`;
+    try {
+      const response = await fetchJSON(endpoint, { method: "DELETE" });
+      if (response.deleted) {
+        setStatus(`已删除邮件 ${state.currentMessageID}`);
+      } else {
+        setStatus(`邮件 ${state.currentMessageID} 不存在或已删除。`, true);
+      }
+      await refreshMessages(true);
+    } catch (error) {
+      setStatus(error.message || "删除邮件失败", true);
+    }
+  }
+
+  async function clearCurrentMailbox() {
+    if (!state.mailbox) {
+      return;
+    }
+
+    const endpoint = `/api/mailboxes/${encodeURIComponent(state.mailbox)}/messages`;
+    try {
+      const response = await fetchJSON(endpoint, { method: "DELETE" });
+      const count = Number(response.count || 0);
+      setStatus(count > 0 ? `已清空当前邮箱，删除 ${count} 封邮件。` : "当前邮箱没有可清空的邮件。");
+      await refreshMessages(true);
+    } catch (error) {
+      setStatus(error.message || "清空邮箱失败", true);
+    }
+  }
+
   function renderDetail(message) {
     if (!message) {
       elements.messageMeta.textContent = "等等就来( ͡° ͜ʖ ͡°)";
@@ -307,8 +356,8 @@
     return `mail${Math.random().toString(36).slice(2, 10)}`;
   }
 
-  async function fetchJSON(url) {
-    const response = await fetch(url, { cache: "no-store" });
+  async function fetchJSON(url, options = {}) {
+    const response = await fetch(url, { cache: "no-store", ...options });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(payload.error || `请求失败: ${response.status}`);

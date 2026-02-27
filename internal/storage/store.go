@@ -52,7 +52,7 @@ func (s *Store) Add(mailbox string, msg Message) {
 	defer s.mu.Unlock()
 
 	now := time.Now().UTC()
-	mailbox = strings.ToLower(strings.TrimSpace(mailbox))
+	mailbox = normalizeMailbox(mailbox)
 
 	if msg.ReceivedAt.IsZero() {
 		msg.ReceivedAt = now
@@ -73,7 +73,7 @@ func (s *Store) List(mailbox string) []Message {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	mailbox = strings.ToLower(strings.TrimSpace(mailbox))
+	mailbox = normalizeMailbox(mailbox)
 	now := time.Now().UTC()
 	s.pruneMailboxLocked(mailbox, now)
 
@@ -89,7 +89,7 @@ func (s *Store) Get(mailbox, id string) (Message, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	mailbox = strings.ToLower(strings.TrimSpace(mailbox))
+	mailbox = normalizeMailbox(mailbox)
 	now := time.Now().UTC()
 	s.pruneMailboxLocked(mailbox, now)
 
@@ -100,6 +100,48 @@ func (s *Store) Get(mailbox, id string) (Message, bool) {
 		}
 	}
 	return Message{}, false
+}
+
+func (s *Store) Delete(mailbox, id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	mailbox = normalizeMailbox(mailbox)
+	id = strings.TrimSpace(id)
+	now := time.Now().UTC()
+	s.pruneMailboxLocked(mailbox, now)
+
+	messages := s.byMailbox[mailbox]
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].ID != id {
+			continue
+		}
+
+		messages = append(messages[:i], messages[i+1:]...)
+		if len(messages) == 0 {
+			delete(s.byMailbox, mailbox)
+		} else {
+			s.byMailbox[mailbox] = messages
+		}
+		return true
+	}
+
+	return false
+}
+
+func (s *Store) Clear(mailbox string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	mailbox = normalizeMailbox(mailbox)
+	now := time.Now().UTC()
+	s.pruneMailboxLocked(mailbox, now)
+
+	count := len(s.byMailbox[mailbox])
+	if count > 0 {
+		delete(s.byMailbox, mailbox)
+	}
+	return count
 }
 
 func (s *Store) CleanupExpired() int {
@@ -187,4 +229,8 @@ func cloneHeaders(headers map[string][]string) map[string][]string {
 		out[key] = append([]string(nil), values...)
 	}
 	return out
+}
+
+func normalizeMailbox(mailbox string) string {
+	return strings.ToLower(strings.TrimSpace(mailbox))
 }
